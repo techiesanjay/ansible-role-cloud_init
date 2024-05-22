@@ -1,0 +1,9 @@
+---
+# vars file for cloud-init
+
+# Gets the user name who launches the playbooks
+local_user: "{{lookup('env', 'USER')}}"
+local_group: "{{local_user}}"
+
+# Data directory where cloud configuration for guests is done on the host
+cloud_init_data_dir: '/cloud-init-data'

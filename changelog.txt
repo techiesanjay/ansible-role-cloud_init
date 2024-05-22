@@ -1,0 +1,21 @@
+* Tuesday April 2, 2024
+- Updating to AAP2
+- adding fqcn to all modules
+
+* Monday January 24, 2022
+- Fixed ansible-lint issues
+
+* Sunday December 26, 2021
+- Fixed bug in CD-ROM ejecting that caused fatal errors
+
+* Sunday November 21, 2021
+- Fixed bug in the jinja template for cloud-init
+- Optimized role to sync cloud images to path /var/lib/libvirt/images. Therefore these cloud images can be used across multiple deployments.
+- Added feature to allow for a VM to be setup with multiple nics
+- Added feature to allow VMs to have multiple block devices
+- Bumped up the role version to v0.2
+
+* Sunday June 13, 2021
+- Initial release of cloud_init role v0.1
+- Added README.md
+- Added changelog.txt

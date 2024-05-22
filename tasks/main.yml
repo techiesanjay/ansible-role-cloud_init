@@ -1,0 +1,9 @@
+---
+# tasks file for cloud-init
+# Checks for VM hosts, and libvirt
+- name: Preflight checks
+  ansible.builtin.import_tasks: preflight_check.yml
+
+# Sets up cloud-init based VM creation
+- name: Processing for cloud-init based VM creation
+  ansible.builtin.include_tasks: process_cloud_vms.yml

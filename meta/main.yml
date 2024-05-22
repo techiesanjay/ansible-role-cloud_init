@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  author: Sanjay Singh
+  description: Ansible role for creating VMs at a blaizing quick speed using cloud-init
+  license: BSD
+  min_ansible_version: 2.8
+  platforms:
+    - name: EL
+      versions:
+        - 7
+    - name: Fedora
+      versions:
+        - 29
+  galaxy_tags:
+    - hypervisor
+    - kvm
+    - virtualization
+    - cloudinit
+dependencies: []

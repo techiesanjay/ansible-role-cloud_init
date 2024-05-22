@@ -1,0 +1,137 @@
+---
+- name: Create cloud-init data directory for VM {{ image.key }}
+  ansible.builtin.file:
+    state: directory
+    path: "{{ cloud_init_data_dir }}/{{ image.key }}"
+    recurse: yes
+    group: qemu
+
+- name: Create cloud-init meta data for VM {{ image.key }}
+  ansible.builtin.copy: 
+    content: |
+      instance-id: {{ image.key }}
+      hostname: {{ image.value.vm_fqdn }}
+      local-hostname: {{ image.value.vm_local_hostname }}
+    dest: "{{ cloud_init_data_dir }}/{{ image.key }}/meta-data"
+    mode: '0755'
+
+
+- name: Create cloud-init user data for VM {{ image.key }}
+  ansible.builtin.template: 
+    src: user-data.j2
+    dest: "{{ cloud_init_data_dir }}/{{ image.key }}/user-data"
+    mode: '0644'
+
+
+
+  # NOTE: Given below is a QEMU qcow2 optimization where a tiny root disk is created that will make use of a base cloud image
+  #       The tiny image will grow based on how the image is used and how content is added to the new root disk. 
+- name: Create root disk based on cloud image for VM {{ image.key }}
+  ansible.builtin.command: "qemu-img create -b /var/lib/libvirt/images/{{ image.value.vm_image_link | urlsplit('path') | basename }} -f qcow2 -F qcow2 {{ cloud_storage_path }}/{{ image.key }}.qcow2 {{ item.value.vm_root_disk_size }}"
+  register: img
+  changed_when: img.rc != 0
+  
+  #EXAMPLE: qemu-img create -b CentOS-7-x86_64-GenericCloud-2009.qcow2 -f qcow2 -F qcow2 rootdisk.qcow2 10G  
+
+  #create [--object objectdef] [-b backing_file] [-F backing_fmt] [-q] [-f fmt] [-u] [-o options] filename [size]
+  # -b backing file image. Can be a cloud image
+  # -F image format of the backing image
+  # -f 'fmt' is the disk image format. It is guessed automatically in most cases eg qcow2
+  # -q is quiet mode
+  # filename is the name of the disk image filename. rootdisk in our case
+
+
+
+  # NOTE: This ISO image will be created with the necessary root disk customization information and will then be mounted as a CDROM on the VM
+  #       cloud-init will then process the data on the CDROM to configure VM guest parameters
+- name: Create cloud-init ISO image for VM {{ image.key }} 
+  ansible.builtin.command: "genisoimage -output {{ cloud_init_data_dir }}/{{ image.key }}/cidata.iso -volid cidata -joliet -r {{ cloud_init_data_dir }}/{{ image.key }}/user-data {{ cloud_init_data_dir }}/{{ image.key }}/meta-data"
+  register: iso
+  changed_when: iso.rc != 0
+  
+  # PURPOSE: This ISO image will be used while booting the VM and cloud-init will use the user-data and meta-data files to configure the image
+  # EXAMPLE: genisoimage -output cidata.iso -V cidata -r -J user-data meta-data
+
+  # --output name of the output ISO file
+  # -volid -V volume label for the ISO. This has to be set to cidata for cloud-init
+  # -joliet -J Generate Joliet directory information
+  # -r Generate rock directory structure
+
+- name: Deploying the VM {{ image.key }}
+  ansible.builtin.command: >
+     virt-install 
+     --connect qemu:///system 
+     --import 
+     --name {{ image.key }} 
+     --ram {{ image.value.vm_memory }}  
+     --vcpus {{ image.value.vm_cpu }}
+     --disk {{ cloud_storage_path }}/{{ image.key }}.qcow2,format=qcow2,bus=virtio
+     --disk {{ cloud_init_data_dir }}/{{ image.key }}/cidata.iso,device=cdrom
+     --network network:{{ cloud_network }},model=virtio 
+     --os-type={{ image.value.vm_os_type }} 
+     --os-variant={{ image.value.vm_os_variant }} 
+     --noautoconsole
+  register: vmcreate
+  changed_when: vmcreate.rc != 0
+
+
+- name: Adding additional network interfaceS (if required)
+  ansible.builtin.command: virsh attach-interface --domain {{ image.key }} --type network --source {{ network_name }} --model virtio --config 
+  loop: "{{ image.value.vm_additional_nics }}"
+  loop_control:
+    loop_var: network_name
+  when: image.value.vm_additional_nics is defined
+
+
+- name: Stopping domain {{ image.key }}
+  community.libvirt.virt:
+    command: destroy
+    name: "{{ image.key }}"
+
+
+# The option -o size=10G,preallocation=metadata if not used will create VMs 193k in size which are usable
+- name: Generating block devices (if required)
+  ansible.builtin.command: qemu-img create -o size={{ size }},preallocation=metadata -f qcow2 {{ cloud_storage_path }}/{{ image.key }}-disk{{ idx }}-{{ size }}.qcow2
+  loop: "{{ image.value.vm_additional_disks }}"
+  loop_control:
+    index_var: idx
+    loop_var: size
+  when: image.value.vm_additional_disks is defined
+
+- name: Setting disk array
+  ansible.builtin.set_fact:
+    blockdev: [b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,y,z]
+
+# if we use item instead of loop_var: size then ansible will complain about reuse of item
+- name: Adding hard disks to {{ image.key }} (if required)
+  ansible.builtin.command: >
+     virsh attach-disk {{ image.key }}
+     --source {{ cloud_storage_path }}/{{ image.key }}-disk{{ idx }}-{{ size }}.qcow2
+     --target vd{{ blockdev[idx] }}  
+     --driver qemu 
+     --persistent
+  loop: "{{ image.value.vm_additional_disks }}"
+  loop_control:
+    index_var: idx
+    loop_var: size
+  when: image.value.vm_additional_disks is defined
+
+- name: Starting domain {{ image.key }}
+  community.libvirt.virt:
+    command: start
+    name: "{{ image.key }}"
+
+- name: Getting CDROM info
+  ansible.builtin.shell: |
+    set -o pipefail
+    virsh domblklist {{ image.key }} | grep cidata.iso | cut -b 2-4
+  args:
+    executable: /bin/bash
+  register: cdrom_device
+  changed_when: cdrom_device.rc != 0
+
+- name: Eject CD-ROM on VM {{ image.key }}
+  ansible.builtin.command: "virsh --connect qemu:///system change-media {{ image.key }} {{ cdrom_device.stdout }} --eject --config"
+  register: cdout
+  changed_when: cdout.rc != 0
+

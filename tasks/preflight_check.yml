@@ -1,0 +1,55 @@
+- name: Sending Ping to KVM hosts
+  ansible.builtin.ping:
+ 
+# Uses magic variables to test list of active hosts Vs total hosts targeted by the play
+- name: Checking for targeted KVM hosts
+  run_once: yes
+  ansible.builtin.assert:
+    that:
+      - ansible_play_hosts == ansible_play_hosts_all
+    msg: "The targeted Virtualization hosts could not be reached"
+
+- name: Checking for targeted RHEL OS family
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family|lower == 'redhat'
+    msg: "Targeted host needs to run RHEL, CentOS, Fedora or any RHEL clone"
+ 
+- name: Checking for targeted Fedora version
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution_major_version|int >= 38
+    msg: "Fedora major version should be greater than 38"
+  when: ansible_distribution == "Fedora"
+ 
+- name: Checking for targeted RHEL OS family version
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution_major_version|int >= 8
+    msg: "RHEL, CentOS Stream, or RHEL clone major version should >= 8"
+  when: ansible_os_family == 'RedHat'
+
+- name: Collecting Virtualization package details
+  ansible.builtin.package_facts:
+    manager: "auto"
+
+- name: Checking for key virtualization package required by cloud-init role
+  ansible.builtin.assert:
+    that:
+      - "'libvirt-python' in ansible_facts.packages or 'python3-libvirt' in ansible_facts.packages"
+      - "'libvirt' in ansible_facts.packages"
+      - "'virt-install' in ansible_facts.packages"
+      - "'qemu-kvm' in ansible_facts.packages and 'qemu-img' in ansible_facts.packages"
+    msg: "Virtualization libraries missing. Run libvirt_setup role or Install Virtualization packages."
+
+- name: Getting CPU virtualization parameters
+  ansible.builtin.shell:
+    cmd: /usr/bin/grep -w -o -E 'svm|vmx' /proc/cpuinfo | /usr/bin/uniq
+  register: is_virt_capable
+  changed_when: is_virt_capable.rc != 0
+
+- name: Checking if hardware virtualization has been turned on
+  ansible.builtin.assert:
+    that:
+      - is_virt_capable.stdout == 'vmx' or is_virt_capable.stdout == 'svm'
+    msg: "Please enable hardware virtualization in BIOS"

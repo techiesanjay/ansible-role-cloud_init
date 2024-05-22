@@ -1,0 +1,66 @@
+---
+# defaults file for cloud-init
+
+########################################
+# Variables for Cloud image processing #
+########################################
+
+# VM creation based on cloud images using cloud-init
+# cloud_vms_info is a list of dictionaries that has VM specs to be created via cloud-init role. This needs to be overridden 
+cloud_vms_info:
+  test1:
+    vm_image_link: https://cloud.centos.org/centos/8/x86_64/images/CentOS-8-GenericCloud-8.4.2105-20210603.0.x86_64.qcow2
+    vm_local_hostname: test1
+    vm_fqdn: test1.example.com
+    vm_root_passwd: letmein
+    vm_os_type: linux
+    vm_os_variant: rhel8.0
+    vm_memory: 1024
+    vm_cpu: 1
+    vm_root_disk_size: 10G
+    vm_static_ip: 192.168.122.250       # VM setup with a static IP. Should use the IP of the libvirt network
+    vm_netmask: 255.255.255.0
+    vm_gateway: 192.168.122.1
+    vm_nm_controlled_network: 'yes'     # Ethernet scripts will be controlled by network manager. Required for RHEL 8 
+#    vm_dns1:                           # (Optional) A DNS IP address can be used if required
+    vm_additional_nics:                 # Creates an additional nic that uses a specific libvirt network
+      - default
+
+  test2:
+    vm_image_link: http://cloud.centos.org/centos/7/images/CentOS-7-x86_64-GenericCloud-2009.qcow2
+    vm_local_hostname: test2
+    vm_fqdn: test2.example.com
+    vm_root_passwd: letmein
+    vm_os_type: linux
+    vm_os_variant: rhel7.0
+    vm_memory: 1024
+    vm_cpu: 1
+    vm_root_disk_size: 10G              # VM setup to use a dhcp lease
+    vm_additional_disks:                # (Optional) A list of block devices (HDD) to be attached to the VM
+      - 10G
+      - 10G
+    vm_nm_controlled_network: 'no'
+
+# NOTE: The cloud-init role optimizes on redundant cloud image downloading from the web.
+
+
+# If set to True this variable allows for a VM to be recreated if they already exist on the hypervisor. For safety this is set to False by default
+# Must be overriden to allow the role to remove and recreate VMs with the same name if they exist on the hypervisor
+vm_recreate: false
+
+# Local directory that holds cloud images required by the cloud-init role.
+# The use of this directory is optional and is encouraged for slow internet connections. 
+# If not present the download directory will be created even if it is not used by the user. 
+# Any image in this folder will be rsynced to the /var/lib/libvirt/images path.
+cloud_images_dir: 'cloud_images'
+# NOTE: The images in this directory will only be used if their names match with vm_image_link image of the cloud_vms_info dictionary
+
+# Default directory where VM creation based on cloud image is done
+cloud_storage_path: /var/lib/libvirt/images
+
+# Libvirt network for cloud VMs
+cloud_network: default
+
+# async and poll values for cloud image download timeouts
+cloud_image_download_timeout: 300
+cloud_image_download_poll: 10

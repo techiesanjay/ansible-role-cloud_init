@@ -1,0 +1,20 @@
+- name: Stopping {{ vm }} VM
+  community.libvirt.virt:
+    command: destroy
+    name: "{{ vm }}"
+  when: domain_info[vm].state == "running"
+
+- name: Updating domain info to check for VM {{ vm }} shutdown state
+  community.libvirt.virt:
+    command: info
+  register: updated_domain_info
+  until: updated_domain_info[vm].state == "shutdown"
+  retries: 20
+  delay: 6
+  #NOTE: The above task will wait up till 120 for the VM to cleanly shutdown
+
+- name: Undefining {{ vm }} VM
+  community.libvirt.virt:
+    command: undefine
+    name: "{{ vm }}"
+  when: updated_domain_info[vm].state == "shutdown"

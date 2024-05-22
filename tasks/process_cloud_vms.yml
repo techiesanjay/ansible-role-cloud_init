@@ -1,0 +1,82 @@
+- name: Collecting VMs information
+  community.libvirt.virt:
+    command: info
+  register: domain_info 
+
+# NOTE: vm_list is a list of VMs to be created as set by the user
+#       vm_present is a list of boolean values validating if the VMs to be created are already present on the hypervisor
+#       vm_img_url is a list of unique cloud images collected to be downloaded
+
+- name: Aggregating details for VMs to be created
+  ansible.builtin.set_fact:
+    vm_list: "{{ vm_list|default([]) + [ item.key ] }}"
+    vm_present: "{{ vm_present|default([]) + [ domain_info[item.key] is defined ] }}"
+    vm_img_url: "{{ (vm_img_url|default([]) + [ item.value.vm_image_link ])|unique }}"
+  loop: "{{ lookup('dict',cloud_vms_info, wantlist=True) }}"
+  loop_control:
+    label: output
+
+- name: Checking if VM Re-creation is disallowed and VM to be created is existing
+  ansible.builtin.fail:
+    msg: "ABORTING - VMs to be created already exist. Consider setting vm_recreate to True"
+  when: domain_info[item] is defined and not vm_recreate|bool
+  loop: "{{ vm_list }}"
+
+- name: Stopping and undefining VMs
+  ansible.builtin.include_tasks: stop_and_undefine_vms.yml
+  when: vm_present[idx] is true
+  loop: "{{ vm_list }}"
+  loop_control:
+    index_var: idx             # index_var starts with 0
+  vars:
+    vm: "{{ item }}"
+
+- name: Creating local download folder for cloud images
+  ansible.builtin.file:
+    state: directory
+    path: "{{ cloud_images_dir }}"
+    recurse: yes
+    owner: "{{ local_user }}"
+    group: "{{ local_group }}"
+    mode: '0775'
+
+- name: Synchronize cloud images to image storage path
+  ansible.posix.synchronize:
+    src: "{{ cloud_images_dir }}/"
+    dest: /var/lib/libvirt/images
+
+- name: Check if the cloud image is already existing
+  ansible.builtin.stat:
+    path: "/var/lib/libvirt/images/{{ item | urlsplit('path') | basename }}"
+  loop: "{{ vm_img_url }}"
+  register: img_available
+
+- name: Initiating download of cloud images (if required)
+  ansible.builtin.get_url:
+    url: "{{ item.item }}"
+    dest: /var/lib/libvirt/images
+    force: yes
+    owner: qemu
+    group: qemu
+  when: not item.stat.exists
+  loop: "{{ img_available.results }}"
+  loop_control:
+    label: output
+  async: "{{ cloud_image_download_timeout }}"
+  poll: "{{ cloud_image_download_poll }}"
+
+- name: Creating cloud-init data directory
+  ansible.builtin.file:
+    state: directory
+    path: "{{ cloud_init_data_dir }}"
+    recurse: yes
+    group: qemu
+    mode: '0775'
+
+- name: Generating VMs
+  ansible.builtin.include_tasks: create_cloud_vm.yml
+  loop: "{{ lookup('dict',cloud_vms_info, wantlist=True) }}"
+  loop_control:
+    label: "{{ item.key }}"
+  vars:
+    image: "{{ item }}"

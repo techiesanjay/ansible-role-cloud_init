@@ -1,0 +1,71 @@
+#cloud-config
+
+users:
+  - name: root
+    lock-passwd: false
+    hashed_passwd: {{image.value.vm_root_passwd | string | password_hash('sha512')}}
+{% if image.value.vm_ssh_authorized_keys is defined %}
+    ssh_authorized_keys: {{ image.value.vm_ssh_authorized_keys }}
+{% endif %}
+{% if image.value.vm_custom_cloud_user is defined %}
+  - name: {{ image.value.vm_custom_cloud_user }}
+    lock-passwd: true
+    gecos: User defined cloud user account
+    sudo: ALL=(ALL) NOPASSWD:ALL
+{% if image.value.vm_ssh_authorized_keys is defined %}
+    ssh_authorized_keys: {{ image.value.vm_ssh_authorized_keys }}
+{% endif %}
+{% endif %}
+{% if image.value.vm_static_ip is defined %}
+
+write_files:
+- content: |
+    # Cloudinit icfg-eth0 file (centos/redhat format)
+
+    BOOTPROTO=STATIC
+    DEVICE=eth0
+    ONBOOT=yes
+    TYPE=Ethernet
+    USERCTL=no
+    IPADDR={{ image.value.vm_static_ip | ansible.utils.ipaddr('address') }}
+    NETMASK={{ image.value.vm_netmask }}
+    GATEWAY={{ image.value.vm_gateway }}
+    DOMAIN={{ image.value.vm_dns_search_domain }}
+{% if image.value.vm_dns1 is defined %}
+    DNS1={{ image.value.vm_dns1 }}     
+{% endif %}
+{% if image.value.vm_dns2 is defined %}
+    DNS2={{ image.value.vm_dns2 }}     
+{% endif %}
+{% if image.value.vm_dns3 is defined %}
+    DNS3={{ image.value.vm_dns3 }}     
+{% endif %}
+    NM_CONTROLLED={{ image.value.vm_nm_controlled_network }}
+  path: /etc/sysconfig/network-scripts/ifcfg-eth0
+
+runcmd:
+  - sed -i -e '/^PasswordAuthentication/s/^.*$/PasswordAuthentication yes/' /etc/ssh/sshd_config
+{% if ansible_os_family == 'RedHat' and ansible_distribution_major_version | int >= 9 %}
+  - sed -i -e '/^#PermitRootLogin/s/^.*$/PermitRootLogin yes/' /etc/ssh/sshd_config
+  - sed -i -e '/^PasswordAuthentication/s/^.*$/PasswordAuthentication yes/' /etc/ssh/sshd_config.d/50-cloud-init.conf
+{% endif %}
+  - systemctl restart sshd
+  - nmcli con reload
+  - nmcli con up 'System eth0'
+  - touch /etc/cloud/cloud-init.disabled
+
+{% else %}
+runcmd:
+  - sed -i -e '/^PasswordAuthentication/s/^.*$/PasswordAuthentication yes/' /etc/ssh/sshd_config
+{% if ansible_os_family == 'RedHat' and ansible_distribution_major_version | int >= 9 %}
+  - sed -i -e '/^#PermitRootLogin/s/^.*$/PermitRootLogin yes/' /etc/ssh/sshd_config
+  - sed -i -e '/^PasswordAuthentication/s/^.*$/PasswordAuthentication yes/' /etc/ssh/sshd_config.d/50-cloud-init.conf
+{% endif %}
+  - systemctl restart sshd
+  - touch /etc/cloud/cloud-init.disabled
+{% endif %}
+
+packages:
+  - "wget"
+  - "bash-completion"
+
