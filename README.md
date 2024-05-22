@@ -18,6 +18,7 @@ The role is dependent on the following content collections:
  - ansible.posix
 
 This role also requires the following:
+
  - qemu-kvm, qemu-img, genisoimage and libguestfs-tools package
  - active libvirt storage pool and network previously provisioned as required by the VMs
  
@@ -28,8 +29,9 @@ This role requires a set of variables along with the dictionary  **cloud_vms_inf
 
 ### cloud_vms_info.<VM_NAME> dictionary variables
 This dictionary is used initialize parameters for a specific VMs instance that need to be created using the **cloud_init** role.
+
 | Variable | Comments |
-| :---  | :--- |
+|--|--|
 | vm_image_link | URL for a specific cloud image |
 | vm_local_hostname | Hostname assigned to the VM during the cloud-init process. |
 | vm_fqdn | Fully qualified domain name of the Virtual machine. Used by cloud-init |
